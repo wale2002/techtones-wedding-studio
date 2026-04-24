@@ -94,7 +94,7 @@ const { sendEmail } = require("../services/email.service");
 const Event = require("../models/Event.model"); // ← ADD THIS LINE
 const { addJob } = require("../jobs/email.queue");
 const { rsvpConfirmationTemplate } = require("../utils/email.templates");
-const rsvpApprovedTemplate = require("../utils/rsvp.Approved.template");
+const rsvpApprovedTemplate = require("../utils/rsvp.approved.template");
 const QRCode = require("qrcode");
 
 /**
