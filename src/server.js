@@ -82,6 +82,8 @@ const emailRoutes = require("./routes/email.routes");
 const rsvpRoutes = require("./routes/rsvp.routes");
 const registryRoutes = require("./routes/registry.routes"); // ✅ ADDED
 const guestRoutes = require("./routes/guest.routes");
+
+const guestMediaRoutes = require("./routes/guestMedia.routes");
 const qrRoutes = require("./routes/qr.routes");
 const checkinRoutes = require("./routes/checkin.routes");
 // OPTIONAL: queue (only if file exists)
@@ -138,7 +140,7 @@ app.use("/", rsvpRoutes);
 app.use("/api/registry", registryRoutes);
 
 app.use("/api/guests", guestRoutes);
-
+app.use("/", guestMediaRoutes);
 app.use("/api/qr", qrRoutes);
 
 app.use("/api/checkin", checkinRoutes);

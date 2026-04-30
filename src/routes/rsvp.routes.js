@@ -48,7 +48,13 @@
 const express = require("express");
 const router = express.Router();
 
-const { submitRsvp, approveRsvp } = require("../controllers/rsvp.controller");
+const {
+  submitRsvp,
+  rejectRsvp,
+  getAllRsvpMessages,
+  approveRsvp,
+  getRsvpsBySlug,
+} = require("../controllers/rsvp.controller");
 const { check } = require("express-validator");
 const validate = require("../middleware/validate.middleware");
 const { protect } = require("../middleware/auth.middleware");
@@ -67,4 +73,7 @@ router.post(
 // PRIVATE (ADMIN / COUPLE ONLY)
 router.put("/api/rsvp/:id/approve", protect, approveRsvp);
 
+router.put("/api/rsvp/:id/reject", protect, rejectRsvp);
+router.get("/w/:slug/rsvps", protect, getRsvpsBySlug);
+router.get("/api/rsvps/messages", protect, getAllRsvpMessages);
 module.exports = router;

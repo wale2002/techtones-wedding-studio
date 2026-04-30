@@ -157,7 +157,7 @@ const approveRsvp = async (req, res) => {
     rsvp.status = "approved";
 
     // Generate check-in URL
-    const checkinUrl = `http://localhost:5000/api/checkin/${rsvp._id}`;
+    const checkinUrl = `http://localhost:8080/api/checkin/${rsvp._id}`;
 
     // Get event slug for Cloudinary folder
     let eventSlug = "default";
@@ -256,8 +256,131 @@ const approveRsvp = async (req, res) => {
 //     return res.status(500).json({ msg: "Server error" });
 //   }
 // };
+const getRsvpsBySlug = async (req, res, next) => {
+  try {
+    const { slug } = req.params;
+
+    const event = await getEventBySlug(slug);
+    if (!event) {
+      return sendResponse(res, 404, false, "Wedding not found");
+    }
+
+    const rsvps = await Rsvp.find({ event: event._id }).sort({ createdAt: -1 });
+
+    const formatted = rsvps.map((rsvp) => ({
+      _id: rsvp._id,
+      fullName: rsvp.name,
+      email: rsvp.email,
+      attending: rsvp.attending,
+      guestsCount: rsvp.numberOfGuests || 0,
+      mealPreference: rsvp.dietaryRequirements
+        ? rsvp.dietaryRequirements
+            .split(" - ")[0]
+            .toLowerCase()
+            .replace(/\s+/g, "_")
+        : "standard",
+      status: rsvp.status || "pending",
+      qrToken: rsvp.qrCode || rsvp.qrToken || null,
+      approvedAt: rsvp.approvedAt,
+      createdAt: rsvp.createdAt,
+    }));
+
+    return sendResponse(
+      res,
+      200,
+      true,
+      "RSVP list retrieved successfully",
+      formatted,
+    );
+  } catch (err) {
+    next(err);
+  }
+};
+/**
+ * 🔴 REJECT / DECLINE RSVP
+ */
+const rejectRsvp = async (req, res) => {
+  try {
+    const rsvp = await Rsvp.findById(req.params.id);
+
+    if (!rsvp) {
+      return res.status(404).json({
+        success: false,
+        message: "RSVP not found",
+      });
+    }
+
+    if (rsvp.status === "rejected") {
+      return res.status(400).json({
+        success: false,
+        message: "RSVP already rejected",
+      });
+    }
+
+    rsvp.status = "rejected";
+    await rsvp.save();
+
+    // Optional: Send rejection email
+    if (rsvp.email) {
+      addJob(async () => {
+        await sendEmail({
+          to: rsvp.email,
+          subject: "RSVP Update - ${event title}",
+          html: `<p>Dear ${rsvp.name},</p><p>Your RSVP has been marked as declined.</p>`,
+        });
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "RSVP rejected successfully",
+      data: rsvp,
+    });
+  } catch (err) {
+    console.error("rejectRsvp error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+};
+/**
+ * 📩 GET ALL RSVP MESSAGES
+ */
+const getAllRsvpMessages = async (req, res, next) => {
+  try {
+    const rsvps = await Rsvp.find({
+      message: { $exists: true, $ne: "" }, // only records with messages
+    })
+      .sort({ createdAt: -1 })
+      .populate("event", "title slug");
+
+    const formatted = rsvps.map((rsvp) => ({
+      id: rsvp._id,
+      name: rsvp.name,
+      email: rsvp.email,
+      message: rsvp.message,
+      event: rsvp.event?.title || null,
+      status: rsvp.status,
+      createdAt: rsvp.createdAt,
+    }));
+
+    return sendResponse(
+      res,
+      200,
+      true,
+      "RSVP messages retrieved successfully",
+      formatted,
+    );
+  } catch (err) {
+    next(err);
+  }
+};
 
 module.exports = {
+  getAllRsvpMessages,
+  rejectRsvp,
   submitRsvp,
   approveRsvp,
+  getRsvpsBySlug,
 };
