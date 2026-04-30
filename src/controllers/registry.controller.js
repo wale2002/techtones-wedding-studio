@@ -58,7 +58,7 @@
 
 const Registry = require("../models/Registry.model");
 const Event = require("../models/Event.model");
-
+const { uploadToCloudinary } = require("../services/cloudinary.service");
 /**
  * 🟢 CREATE REGISTRY (ADMIN ONLY)
  */
@@ -104,30 +104,64 @@ exports.createRegistry = async (req, res) => {
 /**
  * 🟢 ADD GIFT TO REGISTRY (ADMIN ONLY)
  */
+/**
+ * 🟢 ADD GIFT TO REGISTRY (ADMIN ONLY) - Supports Image Upload
+ */
 exports.addGiftToRegistry = async (req, res) => {
   try {
     const { registryId } = req.params;
-    const { name, description, price, url, imageUrl } = req.body;
+    const { name, description, price, purchaseUrl } = req.body;
 
     const registry = await Registry.findById(registryId);
     if (!registry) {
-      return res.status(404).json({ msg: "Registry not found" });
+      return res.status(404).json({
+        success: false,
+        msg: "Registry not found",
+      });
+    }
+
+    let imageUrl = "";
+    let publicId = "";
+
+    // Handle image upload if file is provided
+    if (req.file) {
+      try {
+        const result = await uploadToCloudinary(
+          req.file.path,
+          `weddings/${registry.event}/registry/gifts`,
+        );
+
+        imageUrl = result.secure_url;
+        publicId = result.public_id;
+      } catch (uploadError) {
+        console.error("Gift image upload failed:", uploadError);
+        // Continue without image instead of failing completely
+      }
     }
 
     registry.gifts.push({
       name,
-      description,
-      price,
-      url,
+      description: description || "",
+      price: Number(price),
+      purchaseUrl: purchaseUrl || "",
       imageUrl,
+      publicId,
+      isPurchased: false,
     });
 
     await registry.save();
 
-    res.status(201).json(registry);
+    res.status(201).json({
+      success: true,
+      msg: "Gift added successfully",
+      data: registry,
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).send("Server error");
+    console.error("Add gift error:", err);
+    res.status(500).json({
+      success: false,
+      msg: "Server error",
+    });
   }
 };
 

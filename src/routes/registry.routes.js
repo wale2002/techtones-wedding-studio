@@ -32,6 +32,7 @@
 
 const express = require("express");
 const router = express.Router();
+const upload = require("../middleware/upload.middleware");
 
 const registryController = require("../controllers/registry.controller");
 const { protect } = require("../middleware/auth.middleware");
@@ -54,9 +55,10 @@ router.delete(
   registryController.deleteGiftFromRegistry,
 );
 // Add gift to a registry
+
 router.post(
   "/:registryId/gifts",
-  protect,
+  upload.single("image"), // ← important: 'image' is the field name
   registryController.addGiftToRegistry,
 );
 
