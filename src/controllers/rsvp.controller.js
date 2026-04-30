@@ -157,7 +157,7 @@ const approveRsvp = async (req, res) => {
     rsvp.status = "approved";
 
     // Generate check-in URL
-    const checkinUrl = `http://localhost:8080/api/checkin/${rsvp._id}`;
+    const checkinUrl = `https://deborahiyanu.vercel.app/api/checkin/${rsvp._id}`;
 
     // Get event slug for Cloudinary folder
     let eventSlug = "default";
