@@ -17,10 +17,10 @@ router.post(
   validate,
   guestController.createGuest,
 );
-
+router.post("/bulk", protect, guestController.createMultipleGuests);
 // GET GUESTS BY EVENT
-router.get("/:eventId", protect, guestController.getGuestsByEvent);
-
+router.get("/events/:eventId", protect, guestController.getGuestsByEvent);
+router.get("/:id", guestController.getGuestById); // Important for QR scanning
 // UPDATE GUEST
 router.put("/:guestId", protect, guestController.updateGuest);
 

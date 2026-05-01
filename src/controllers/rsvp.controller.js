@@ -1,11 +1,105 @@
+// // const { getEventBySlug } = require("../services/event.service");
+// // const { processRsvp } = require("../services/rsvp.service");
+// // const { sendResponse } = require("../utils/response.utils");
+// // const Rsvp = require("../models/Rsvp.model");
+// // const { sendEmail } = require("../services/email.service");
+// // const { addJob } = require("../jobs/email.queue");
+// // const { rsvpConfirmationTemplate } = require("../utils/email.templates");
+
+// // const submitRsvp = async (req, res, next) => {
+// //   try {
+// //     const { slug } = req.params;
+// //     const event = await getEventBySlug(slug);
+
+// //     if (!event) {
+// //       return sendResponse(res, 404, false, "Wedding not found");
+// //     }
+
+// //     const rsvp = await processRsvp(event, req.body);
+
+// //     /**
+// //      * SEND CONFIRMATION EMAIL
+// //      */
+// //     if (rsvp.email) {
+// //       try {
+// //         const htmlContent = rsvpConfirmationTemplate({
+// //           name: rsvp.name,
+// //           eventTitle: event.title,
+// //         });
+
+// //         await sendEmail({
+// //           to: rsvp.email, // ✅ FIXED: was "email", now "to"
+// //           subject: `RSVP Received - ${event.title}`,
+// //           html: htmlContent,
+// //           message: `Hi ${rsvp.name}, your RSVP has been received for ${event.title}`,
+// //         });
+
+// //         console.log(`Confirmation email sent to ${rsvp.email}`);
+// //       } catch (emailErr) {
+// //         console.error("Failed to send RSVP confirmation:", emailErr.message);
+// //       }
+// //     }
+
+// //     return sendResponse(res, 201, true, "RSVP submitted successfully", rsvp);
+// //   } catch (err) {
+// //     next(err);
+// //   }
+// // };
+
+// // const approveRsvp = async (req, res) => {
+// //   try {
+// //     const rsvp = await Rsvp.findById(req.params.id);
+
+// //     if (!rsvp) {
+// //       return res.status(404).json({ msg: "RSVP not found" });
+// //     }
+
+// //     // Update status
+// //     rsvp.status = "approved";
+// //     await rsvp.save();
+
+// //     // Send email ONLY if email exists
+// //     if (rsvp.email) {
+// //       addJob(async () => {
+// //         await sendEmail({
+// //           to: rsvp.email, // ✅ FIXED (standardized)
+// //           subject: "🎉 RSVP Confirmed - You're Invited!",
+// //           html: require("../utils/rsvp.Approved.template")(rsvp),
+// //         });
+// //       });
+// //     }
+
+// //     return res.json({
+// //       success: true,
+// //       message: "RSVP approved and email queued successfully",
+// //       data: rsvp,
+// //     });
+// //   } catch (err) {
+// //     console.error("approveRsvp error:", err);
+// //     return res.status(500).json({ msg: "Server error" });
+// //   }
+// // };
+
+// // module.exports = {
+// //   submitRsvp,
+// //   approveRsvp,
+// // };
+
 // const { getEventBySlug } = require("../services/event.service");
 // const { processRsvp } = require("../services/rsvp.service");
 // const { sendResponse } = require("../utils/response.utils");
 // const Rsvp = require("../models/Rsvp.model");
+// const { generateAndUploadQR } = require("../services/qr.service");
 // const { sendEmail } = require("../services/email.service");
+// const Event = require("../models/Event.model"); // ← ADD THIS LINE
 // const { addJob } = require("../jobs/email.queue");
 // const { rsvpConfirmationTemplate } = require("../utils/email.templates");
+// const rsvpApprovedTemplate = require("../utils/rsvp.approved.template");
+// const QRCode = require("qrcode");
 
+// /**
+//  * 🟡 RSVP SUBMISSION (PENDING STATE)
+//  */
 // const submitRsvp = async (req, res, next) => {
 //   try {
 //     const { slug } = req.params;
@@ -18,26 +112,19 @@
 //     const rsvp = await processRsvp(event, req.body);
 
 //     /**
-//      * SEND CONFIRMATION EMAIL
+//      * 📧 SEND CONFIRMATION EMAIL (NO QR HERE)
 //      */
 //     if (rsvp.email) {
-//       try {
-//         const htmlContent = rsvpConfirmationTemplate({
-//           name: rsvp.name,
-//           eventTitle: event.title,
-//         });
-
+//       addJob(async () => {
 //         await sendEmail({
-//           to: rsvp.email, // ✅ FIXED: was "email", now "to"
+//           to: rsvp.email,
 //           subject: `RSVP Received - ${event.title}`,
-//           html: htmlContent,
-//           message: `Hi ${rsvp.name}, your RSVP has been received for ${event.title}`,
+//           html: rsvpConfirmationTemplate({
+//             name: rsvp.name,
+//             eventTitle: event.title,
+//           }),
 //         });
-
-//         console.log(`Confirmation email sent to ${rsvp.email}`);
-//       } catch (emailErr) {
-//         console.error("Failed to send RSVP confirmation:", emailErr.message);
-//       }
+//       });
 //     }
 
 //     return sendResponse(res, 201, true, "RSVP submitted successfully", rsvp);
@@ -46,6 +133,12 @@
 //   }
 // };
 
+// /**
+//  * 🟢 APPROVE RSVP (TICKET ISSUED)
+//  */
+// /**
+//  * 🟢 APPROVE RSVP (TICKET ISSUED WITH QR)
+//  */
 // const approveRsvp = async (req, res) => {
 //   try {
 //     const rsvp = await Rsvp.findById(req.params.id);
@@ -54,36 +147,245 @@
 //       return res.status(404).json({ msg: "RSVP not found" });
 //     }
 
-//     // Update status
+//     if (rsvp.status === "approved") {
+//       return res.status(400).json({
+//         success: false,
+//         message: "RSVP already approved",
+//       });
+//     }
+
 //     rsvp.status = "approved";
+
+//     // Generate check-in URL
+//     const checkinUrl = `https://deborahiyanu.vercel.app/api/checkin/${rsvp._id}`;
+
+//     // Get event slug for Cloudinary folder
+//     let eventSlug = "default";
+//     if (rsvp.event) {
+//       const event = await Event.findById(rsvp.event);
+//       if (event && event.slug) {
+//         eventSlug = event.slug;
+//       }
+//     }
+
+//     // Generate + upload QR to Cloudinary
+//     const qrPublicUrl = await generateAndUploadQR(checkinUrl, eventSlug);
+
+//     rsvp.qrCode = qrPublicUrl;
 //     await rsvp.save();
 
-//     // Send email ONLY if email exists
+//     // Send approval email with QR
+//     if (rsvp.email) {
+//       addJob(async () => {
+//         try {
+//           await sendEmail({
+//             to: rsvp.email,
+//             subject: "🎉 RSVP Approved - Your Entry Pass",
+//             html: rsvpApprovedTemplate(rsvp, qrPublicUrl, checkinUrl), // pass checkinUrl for fallback
+//           });
+//           console.log(`Approval email with QR sent to ${rsvp.email}`);
+//         } catch (emailErr) {
+//           console.error("Failed to send approval email:", emailErr.message);
+//         }
+//       });
+//     }
+
+//     return res.json({
+//       success: true,
+//       message: "RSVP approved and ticket sent",
+//       data: rsvp,
+//     });
+//   } catch (err) {
+//     console.error("approveRsvp error:", err);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Server error",
+//       error: err.message,
+//     });
+//   }
+// };
+// // const approveRsvp = async (req, res) => {
+// //   try {
+// //     const rsvp = await Rsvp.findById(req.params.id);
+
+// //     if (!rsvp) {
+// //       return res.status(404).json({ msg: "RSVP not found" });
+// //     }
+
+// //     /**
+// //      * 🚫 Prevent double approval
+// //      */
+// //     if (rsvp.status === "approved") {
+// //       return res.status(400).json({
+// //         success: false,
+// //         message: "RSVP already approved",
+// //       });
+// //     }
+
+// //     // ✅ STEP 1: Update status
+// //     rsvp.status = "approved";
+
+// //     // 🎟 STEP 2: Generate QR code (check-in link)
+// //     const checkinUrl = `${process.env.FRONTEND_URL}/checkin/${rsvp._id}`;
+// //     const qrCodeImage = await QRCode.toDataURL(checkinUrl);
+
+// //     rsvp.qrCode = qrCodeImage;
+
+// //     await rsvp.save();
+
+// //     /**
+// //      * 📧 STEP 3: SEND APPROVAL EMAIL (WITH QR)
+// //      */
+// //     if (rsvp.email) {
+// //       addJob(async () => {
+// //         await sendEmail({
+// //           to: rsvp.email,
+// //           subject: "🎉 RSVP Approved - Your Entry Pass",
+// //           html: rsvpApprovedTemplate(rsvp, qrCodeImage),
+// //         });
+// //       });
+// //     }
+
+// //     return res.json({
+// //       success: true,
+// //       message: "RSVP approved and ticket sent",
+// //       data: rsvp,
+// //     });
+// //   } catch (err) {
+// //     console.error("approveRsvp error:", err);
+// //     return res.status(500).json({ msg: "Server error" });
+// //   }
+// // };
+// const getRsvpsBySlug = async (req, res, next) => {
+//   try {
+//     const { slug } = req.params;
+
+//     const event = await getEventBySlug(slug);
+//     if (!event) {
+//       return sendResponse(res, 404, false, "Wedding not found");
+//     }
+
+//     const rsvps = await Rsvp.find({ event: event._id }).sort({ createdAt: -1 });
+
+//     const formatted = rsvps.map((rsvp) => ({
+//       _id: rsvp._id,
+//       fullName: rsvp.name,
+//       email: rsvp.email,
+//       attending: rsvp.attending,
+//       guestsCount: rsvp.numberOfGuests || 0,
+//       mealPreference: rsvp.dietaryRequirements
+//         ? rsvp.dietaryRequirements
+//             .split(" - ")[0]
+//             .toLowerCase()
+//             .replace(/\s+/g, "_")
+//         : "standard",
+//       status: rsvp.status || "pending",
+//       qrToken: rsvp.qrCode || rsvp.qrToken || null,
+//       approvedAt: rsvp.approvedAt,
+//       createdAt: rsvp.createdAt,
+//     }));
+
+//     return sendResponse(
+//       res,
+//       200,
+//       true,
+//       "RSVP list retrieved successfully",
+//       formatted,
+//     );
+//   } catch (err) {
+//     next(err);
+//   }
+// };
+// /**
+//  * 🔴 REJECT / DECLINE RSVP
+//  */
+// const rejectRsvp = async (req, res) => {
+//   try {
+//     const rsvp = await Rsvp.findById(req.params.id);
+
+//     if (!rsvp) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "RSVP not found",
+//       });
+//     }
+
+//     if (rsvp.status === "rejected") {
+//       return res.status(400).json({
+//         success: false,
+//         message: "RSVP already rejected",
+//       });
+//     }
+
+//     rsvp.status = "rejected";
+//     await rsvp.save();
+
+//     // Optional: Send rejection email
 //     if (rsvp.email) {
 //       addJob(async () => {
 //         await sendEmail({
-//           to: rsvp.email, // ✅ FIXED (standardized)
-//           subject: "🎉 RSVP Confirmed - You're Invited!",
-//           html: require("../utils/rsvp.Approved.template")(rsvp),
+//           to: rsvp.email,
+//           subject: "RSVP Update - ${event title}",
+//           html: `<p>Dear ${rsvp.name},</p><p>Your RSVP has been marked as declined.</p>`,
 //         });
 //       });
 //     }
 
 //     return res.json({
 //       success: true,
-//       message: "RSVP approved and email queued successfully",
+//       message: "RSVP rejected successfully",
 //       data: rsvp,
 //     });
 //   } catch (err) {
-//     console.error("approveRsvp error:", err);
-//     return res.status(500).json({ msg: "Server error" });
+//     console.error("rejectRsvp error:", err);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Server error",
+//     });
+//   }
+// };
+// /**
+//  * 📩 GET ALL RSVP MESSAGES
+//  */
+// const getAllRsvpMessages = async (req, res, next) => {
+//   try {
+//     const rsvps = await Rsvp.find({
+//       message: { $exists: true, $ne: "" }, // only records with messages
+//     })
+//       .sort({ createdAt: -1 })
+//       .populate("event", "title slug");
+
+//     const formatted = rsvps.map((rsvp) => ({
+//       id: rsvp._id,
+//       name: rsvp.name,
+//       email: rsvp.email,
+//       message: rsvp.message,
+//       event: rsvp.event?.title || null,
+//       status: rsvp.status,
+//       createdAt: rsvp.createdAt,
+//     }));
+
+//     return sendResponse(
+//       res,
+//       200,
+//       true,
+//       "RSVP messages retrieved successfully",
+//       formatted,
+//     );
+//   } catch (err) {
+//     next(err);
 //   }
 // };
 
 // module.exports = {
+//   getAllRsvpMessages,
+//   rejectRsvp,
 //   submitRsvp,
 //   approveRsvp,
+//   getRsvpsBySlug,
 // };
+
+// controllers/rsvp.controller.js
 
 const { getEventBySlug } = require("../services/event.service");
 const { processRsvp } = require("../services/rsvp.service");
@@ -91,11 +393,11 @@ const { sendResponse } = require("../utils/response.utils");
 const Rsvp = require("../models/Rsvp.model");
 const { generateAndUploadQR } = require("../services/qr.service");
 const { sendEmail } = require("../services/email.service");
-const Event = require("../models/Event.model"); // ← ADD THIS LINE
+const Event = require("../models/Event.model");
+const Guest = require("../models/Guest.model");
 const { addJob } = require("../jobs/email.queue");
 const { rsvpConfirmationTemplate } = require("../utils/email.templates");
 const rsvpApprovedTemplate = require("../utils/rsvp.approved.template");
-const QRCode = require("qrcode");
 
 /**
  * 🟡 RSVP SUBMISSION (PENDING STATE)
@@ -109,10 +411,11 @@ const submitRsvp = async (req, res, next) => {
       return sendResponse(res, 404, false, "Wedding not found");
     }
 
+    // Removed numberOfGuests and dietaryRequirements from processing
     const rsvp = await processRsvp(event, req.body);
 
     /**
-     * 📧 SEND CONFIRMATION EMAIL (NO QR HERE)
+     * 📧 SEND CONFIRMATION EMAIL
      */
     if (rsvp.email) {
       addJob(async () => {
@@ -134,9 +437,6 @@ const submitRsvp = async (req, res, next) => {
 };
 
 /**
- * 🟢 APPROVE RSVP (TICKET ISSUED)
- */
-/**
  * 🟢 APPROVE RSVP (TICKET ISSUED WITH QR)
  */
 const approveRsvp = async (req, res) => {
@@ -144,7 +444,10 @@ const approveRsvp = async (req, res) => {
     const rsvp = await Rsvp.findById(req.params.id);
 
     if (!rsvp) {
-      return res.status(404).json({ msg: "RSVP not found" });
+      return res.status(404).json({
+        success: false,
+        message: "RSVP not found",
+      });
     }
 
     if (rsvp.status === "approved") {
@@ -154,34 +457,51 @@ const approveRsvp = async (req, res) => {
       });
     }
 
+    // ==================== GUEST LINKING LOGIC ====================
+    let linkedGuest = null;
+
+    if (rsvp.email) {
+      // Try to find existing Guest with same email for this event
+      linkedGuest = await Guest.findOne({
+        event: rsvp.event,
+        email: rsvp.email.toLowerCase().trim(),
+      });
+
+      // If Guest found, link it to this RSVP
+      if (linkedGuest) {
+        rsvp.guest = linkedGuest._id;
+      }
+    }
+    // ============================================================
+
+    // Update status to approved
     rsvp.status = "approved";
 
-    // Generate check-in URL
-    const checkinUrl = `https://deborahiyanu.vercel.app/api/checkin/${rsvp._id}`;
+    // Generate Check-in URL for QR Code
+    const checkinUrl = `https://${process.env.BASE_URL || "localhost:5000"}/api/checkin/${rsvp._id}`;
 
     // Get event slug for Cloudinary folder
     let eventSlug = "default";
-    if (rsvp.event) {
-      const event = await Event.findById(rsvp.event);
-      if (event && event.slug) {
-        eventSlug = event.slug;
-      }
+    const event = await Event.findById(rsvp.event);
+    if (event && event.slug) {
+      eventSlug = event.slug;
     }
 
-    // Generate + upload QR to Cloudinary
+    // Generate and Upload QR Code
     const qrPublicUrl = await generateAndUploadQR(checkinUrl, eventSlug);
 
     rsvp.qrCode = qrPublicUrl;
+
     await rsvp.save();
 
-    // Send approval email with QR
+    // Send Approval Email with QR Code
     if (rsvp.email) {
       addJob(async () => {
         try {
           await sendEmail({
             to: rsvp.email,
             subject: "🎉 RSVP Approved - Your Entry Pass",
-            html: rsvpApprovedTemplate(rsvp, qrPublicUrl, checkinUrl), // pass checkinUrl for fallback
+            html: rsvpApprovedTemplate(rsvp, qrPublicUrl, checkinUrl),
           });
           console.log(`Approval email with QR sent to ${rsvp.email}`);
         } catch (emailErr) {
@@ -192,8 +512,14 @@ const approveRsvp = async (req, res) => {
 
     return res.json({
       success: true,
-      message: "RSVP approved and ticket sent",
-      data: rsvp,
+      message: "RSVP approved successfully with QR code",
+      data: {
+        rsvpId: rsvp._id,
+        name: rsvp.name,
+        status: rsvp.status,
+        qrCode: rsvp.qrCode,
+        linkedToGuest: !!linkedGuest,
+      },
     });
   } catch (err) {
     console.error("approveRsvp error:", err);
@@ -204,58 +530,9 @@ const approveRsvp = async (req, res) => {
     });
   }
 };
-// const approveRsvp = async (req, res) => {
-//   try {
-//     const rsvp = await Rsvp.findById(req.params.id);
-
-//     if (!rsvp) {
-//       return res.status(404).json({ msg: "RSVP not found" });
-//     }
-
-//     /**
-//      * 🚫 Prevent double approval
-//      */
-//     if (rsvp.status === "approved") {
-//       return res.status(400).json({
-//         success: false,
-//         message: "RSVP already approved",
-//       });
-//     }
-
-//     // ✅ STEP 1: Update status
-//     rsvp.status = "approved";
-
-//     // 🎟 STEP 2: Generate QR code (check-in link)
-//     const checkinUrl = `${process.env.FRONTEND_URL}/checkin/${rsvp._id}`;
-//     const qrCodeImage = await QRCode.toDataURL(checkinUrl);
-
-//     rsvp.qrCode = qrCodeImage;
-
-//     await rsvp.save();
-
-//     /**
-//      * 📧 STEP 3: SEND APPROVAL EMAIL (WITH QR)
-//      */
-//     if (rsvp.email) {
-//       addJob(async () => {
-//         await sendEmail({
-//           to: rsvp.email,
-//           subject: "🎉 RSVP Approved - Your Entry Pass",
-//           html: rsvpApprovedTemplate(rsvp, qrCodeImage),
-//         });
-//       });
-//     }
-
-//     return res.json({
-//       success: true,
-//       message: "RSVP approved and ticket sent",
-//       data: rsvp,
-//     });
-//   } catch (err) {
-//     console.error("approveRsvp error:", err);
-//     return res.status(500).json({ msg: "Server error" });
-//   }
-// };
+/**
+ * 📋 GET RSVPs BY EVENT SLUG
+ */
 const getRsvpsBySlug = async (req, res, next) => {
   try {
     const { slug } = req.params;
@@ -272,15 +549,9 @@ const getRsvpsBySlug = async (req, res, next) => {
       fullName: rsvp.name,
       email: rsvp.email,
       attending: rsvp.attending,
-      guestsCount: rsvp.numberOfGuests || 0,
-      mealPreference: rsvp.dietaryRequirements
-        ? rsvp.dietaryRequirements
-            .split(" - ")[0]
-            .toLowerCase()
-            .replace(/\s+/g, "_")
-        : "standard",
+      mealPreference: rsvp.mealPreference || null, // ✅ added
       status: rsvp.status || "pending",
-      qrToken: rsvp.qrCode || rsvp.qrToken || null,
+      qrCode: rsvp.qrCode || rsvp.qrToken || null, // ✅ renamed from qrToken
       approvedAt: rsvp.approvedAt,
       createdAt: rsvp.createdAt,
     }));
@@ -296,8 +567,9 @@ const getRsvpsBySlug = async (req, res, next) => {
     next(err);
   }
 };
+
 /**
- * 🔴 REJECT / DECLINE RSVP
+ * 🔴 REJECT RSVP
  */
 const rejectRsvp = async (req, res) => {
   try {
@@ -325,7 +597,7 @@ const rejectRsvp = async (req, res) => {
       addJob(async () => {
         await sendEmail({
           to: rsvp.email,
-          subject: "RSVP Update - ${event title}",
+          subject: "RSVP Update",
           html: `<p>Dear ${rsvp.name},</p><p>Your RSVP has been marked as declined.</p>`,
         });
       });
@@ -344,13 +616,14 @@ const rejectRsvp = async (req, res) => {
     });
   }
 };
+
 /**
  * 📩 GET ALL RSVP MESSAGES
  */
 const getAllRsvpMessages = async (req, res, next) => {
   try {
     const rsvps = await Rsvp.find({
-      message: { $exists: true, $ne: "" }, // only records with messages
+      message: { $exists: true, $ne: "" },
     })
       .sort({ createdAt: -1 })
       .populate("event", "title slug");

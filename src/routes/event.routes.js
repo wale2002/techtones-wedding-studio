@@ -24,6 +24,7 @@ const router = express.Router();
 const {
   getPublicEvent,
   createEvent,
+  updateEvent,
 } = require("../controllers/event.controller");
 const { submitRsvp } = require("../controllers/rsvp.controller");
 const {
@@ -50,13 +51,13 @@ router.post("/w/:slug/rsvp", submitRsvp);
 //   upload.array("media", 10), // ✅ FIX: supports multiple files
 //   uploadGuestMedia,
 // );
-
+router.put("/:id", protect, updateEvent); // protect = your auth middleware
 // GALLERY
 router.get("/w/:slug/gallery", getGuestMediaByEvent);
 
 // ========================
 // PRIVATE ROUTES
 // ========================
-router.post("/api/events", protect, createEvent);
+router.post("/", protect, createEvent);
 
 module.exports = router;
