@@ -478,7 +478,7 @@ const approveRsvp = async (req, res) => {
     rsvp.status = "approved";
 
     // Generate Check-in URL for QR Code
-    const checkinUrl = `https://${process.env.BASE_URL || "localhost:5000"}/api/checkin/${rsvp._id}`;
+    const checkinUrl = `https://techtones-wedding-studio.onrender.com/api/checkin/${rsvp._id}`;
 
     // Get event slug for Cloudinary folder
     let eventSlug = "default";
